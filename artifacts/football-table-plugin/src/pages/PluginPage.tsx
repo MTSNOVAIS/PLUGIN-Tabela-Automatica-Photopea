@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -12,6 +11,8 @@ import { LayerMapper } from "@/components/LayerMapper";
 import { useSofascore } from "@/hooks/useSofascore";
 import { usePhotopea } from "@/hooks/usePhotopea";
 import type { TeamStanding, LayerMapping } from "@/types/football";
+
+const PLUGIN_LOGO = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRnzhDYO9zajTF_4o-5bqTLMWCjKVHiRcdJA&s";
 
 export default function PluginPage() {
   const { toast } = useToast();
@@ -106,13 +107,22 @@ export default function PluginPage() {
     }
   }, [updateQueue, layerMappings, applyUpdates, isPhotopea, toast]);
 
+  void selectedLeague;
+  void selectedSeason;
+
   const progress = standings.length > 0 ? (updatedCount / standings.length) * 100 : 0;
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
       <header className="px-3 py-2 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-base font-semibold">Tabela de Futebol</span>
+          <img
+            src={PLUGIN_LOGO}
+            alt="Logo"
+            className="w-6 h-6 rounded object-cover flex-shrink-0"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+          <span className="text-sm font-semibold leading-tight">Tabela de Futebol</span>
           {isPhotopea ? (
             <Badge variant="outline" className="text-xs text-green-600 border-green-500">Photopea</Badge>
           ) : (
@@ -173,12 +183,18 @@ export default function PluginPage() {
                   </Select>
                 </div>
                 <Separator orientation="vertical" className="h-4" />
-                <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => handleAddBatch(1)}>
-                  Adicionar próximos {batchSize}
-                </Button>
-                <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={handleAddAll}>
+                <button
+                  className="h-6 text-xs px-2 border border-border rounded-md hover:bg-muted transition-colors"
+                  onClick={() => handleAddBatch(1)}
+                >
+                  Próximos {batchSize}
+                </button>
+                <button
+                  className="h-6 text-xs px-2 border border-border rounded-md hover:bg-muted transition-colors"
+                  onClick={handleAddAll}
+                >
                   Todos
-                </Button>
+                </button>
               </div>
             )}
             <StandingsTable

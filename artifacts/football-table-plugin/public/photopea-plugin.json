@@ -1,7 +1,11 @@
 {
-  "name": "Tabela de Futebol",
-  "description": "Atualiza tabelas de futebol automaticamente com dados do Sofascore. Selecione a liga, configure o mapeamento de layers e aplique as atualizações em lotes no seu PSD.",
-  "version": "1.0.0",
-  "url": "https://b4e8f017-092d-4e78-9d02-5ec0801ddb05-00-vjrn6aucqj0g.picard.replit.dev/",
-  "size": [340, 600]
+  "environment": {
+    "plugins": [
+      {
+        "name": "Tabela de Futebol",
+        "url": "https://b4e8f017-092d-4e78-9d02-5ec0801ddb05-00-vjrn6aucqj0g.picard.replit.dev/",
+        "icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRnzhDYO9zajTF_4o-5bqTLMWCjKVHiRcdJA&s"
+      }
+    ]
+  }
 }
