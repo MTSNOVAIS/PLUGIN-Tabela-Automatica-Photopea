@@ -195,6 +195,14 @@ export default function PluginPage() {
           <div className="flex flex-col h-full">
             {standings.length > 0 && (
               <div className="px-3 py-2 border-b border-border flex items-center gap-2 flex-wrap">
+                {(() => {
+                  const round = Math.max(...standings.map(s => s.played), 0);
+                  return round > 0 ? (
+                    <span className="text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded px-2 py-0.5 mr-1">
+                      Rodada {round}
+                    </span>
+                  ) : null;
+                })()}
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">Lote de</span>
                   <Select value={String(batchSize)} onValueChange={v => setBatchSize(Number(v))}>
