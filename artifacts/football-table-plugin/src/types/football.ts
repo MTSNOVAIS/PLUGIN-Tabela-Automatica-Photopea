@@ -96,89 +96,59 @@ export function getFieldValue(standing: TeamStanding, field: LayerType): string 
 
 export const POPULAR_LEAGUES: League[] = [
   {
-    id: "7",
+    id: "bra.1",
     name: "Brasileirão Série A",
     country: "Brasil",
-    slug: "brasileiro-serie-a",
-    seasons: [
-      { id: "69059", name: "2024/25", year: "2024" },
-      { id: "57478", name: "2023/24", year: "2023" },
-    ]
+    slug: "bra.1",
+    seasons: [{ id: "current", name: "2026", year: "2026" }],
   },
   {
-    id: "37",
+    id: "bra.2",
     name: "Brasileirão Série B",
     country: "Brasil",
-    slug: "brasileiro-serie-b",
-    seasons: [
-      { id: "69060", name: "2024/25", year: "2024" },
-    ]
+    slug: "bra.2",
+    seasons: [{ id: "current", name: "2026", year: "2026" }],
   },
   {
-    id: "8",
+    id: "eng.1",
     name: "Premier League",
     country: "Inglaterra",
-    slug: "premier-league",
-    seasons: [
-      { id: "61627", name: "2024/25", year: "2024" },
-      { id: "52186", name: "2023/24", year: "2023" },
-    ]
+    slug: "eng.1",
+    seasons: [{ id: "current", name: "2024/25", year: "2025" }],
   },
   {
-    id: "87",
+    id: "esp.1",
     name: "La Liga",
     country: "Espanha",
-    slug: "laliga",
-    seasons: [
-      { id: "61643", name: "2024/25", year: "2024" },
-      { id: "52376", name: "2023/24", year: "2023" },
-    ]
+    slug: "esp.1",
+    seasons: [{ id: "current", name: "2024/25", year: "2025" }],
   },
   {
-    id: "23",
+    id: "ita.1",
     name: "Serie A",
     country: "Itália",
-    slug: "serie-a",
-    seasons: [
-      { id: "61644", name: "2024/25", year: "2024" },
-      { id: "52760", name: "2023/24", year: "2023" },
-    ]
+    slug: "ita.1",
+    seasons: [{ id: "current", name: "2024/25", year: "2025" }],
   },
   {
-    id: "35",
+    id: "ger.1",
     name: "Bundesliga",
     country: "Alemanha",
-    slug: "bundesliga",
-    seasons: [
-      { id: "62932", name: "2024/25", year: "2024" },
-      { id: "52608", name: "2023/24", year: "2023" },
-    ]
+    slug: "ger.1",
+    seasons: [{ id: "current", name: "2024/25", year: "2025" }],
   },
   {
-    id: "34",
+    id: "fra.1",
     name: "Ligue 1",
     country: "França",
-    slug: "ligue-1",
-    seasons: [
-      { id: "63694", name: "2024/25", year: "2024" },
-    ]
+    slug: "fra.1",
+    seasons: [{ id: "current", name: "2024/25", year: "2025" }],
   },
   {
-    id: "384",
-    name: "Champions League",
-    country: "Europa",
-    slug: "uefa-champions-league",
-    seasons: [
-      { id: "61671", name: "2024/25", year: "2024" },
-    ]
-  },
-  {
-    id: "11",
+    id: "conmebol.libertadores",
     name: "Libertadores",
     country: "América do Sul",
-    slug: "copa-libertadores",
-    seasons: [
-      { id: "69580", name: "2025", year: "2025" },
-    ]
+    slug: "conmebol.libertadores",
+    seasons: [{ id: "current", name: "2025", year: "2025" }],
   },
 ];
