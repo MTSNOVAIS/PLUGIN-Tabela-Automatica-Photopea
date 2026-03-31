@@ -10,124 +10,120 @@ function isInPhotopea(): boolean {
   }
 }
 
-function runScript(script: string): Promise<string> {
+/**
+ * Runs a Photopea script and waits for a response tagged with a unique token.
+ * The script must call: app.echoToOE(__TOKEN__ + "|" + yourData)
+ * This prevents capturing stray Photopea messages (progress, HMR, etc.)
+ */
+function runScript(scriptBody: string): Promise<string> {
   return new Promise((resolve, reject) => {
+    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const prefix = token + "|";
+
+    // Inject token into the script — script must echo: token + "|" + data
+    const fullScript = scriptBody.replace("__TOKEN__", `'${token}'`);
+
     const timeout = setTimeout(() => {
       window.removeEventListener("message", handler);
-      reject(new Error("Photopea script timeout"));
-    }, 10000);
+      reject(new Error("Photopea timeout"));
+    }, 15000);
 
     function handler(event: MessageEvent) {
       if (event.source !== window.parent) return;
+      if (typeof event.data !== "string") return;
+      if (!event.data.startsWith(prefix)) return; // ignore unrelated messages
       clearTimeout(timeout);
       window.removeEventListener("message", handler);
-      if (typeof event.data === "string") {
-        resolve(event.data);
-      } else if (event.data instanceof ArrayBuffer) {
-        resolve("arraybuffer");
-      } else {
-        resolve(String(event.data ?? ""));
-      }
+      resolve(event.data.slice(prefix.length));
     }
 
     window.addEventListener("message", handler);
-    window.parent.postMessage(script, "*");
+    window.parent.postMessage(fullScript, "*");
   });
 }
 
-/**
- * Scans the active PSD for numbered groups (1, 2, 3...) and collects
- * the text layer names from the first group found.
- */
 function buildScanScript(prefix: string): string {
   const escapedPrefix = prefix.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   return `
 (function() {
-  function findNumberedGroups(container, prefix, depth) {
+  var token = __TOKEN__;
+  function findNumberedGroups(container, pfx, depth) {
     var groups = [];
-    if (depth > 5) return groups;
+    if (depth > 6) return groups;
     for (var i = 0; i < container.layers.length; i++) {
       var layer = container.layers[i];
       if (layer.typename === "LayerSet") {
         var trimmed = layer.name.trim();
-        var withoutPrefix = trimmed;
-        if (prefix && trimmed.indexOf(prefix) === 0) {
-          withoutPrefix = trimmed.slice(prefix.length).trim();
-        }
-        var num = parseInt(withoutPrefix, 10);
-        if (!isNaN(num) && String(num) === withoutPrefix) {
+        var without = trimmed;
+        if (pfx && trimmed.indexOf(pfx) === 0) without = trimmed.slice(pfx.length).trim();
+        var num = parseInt(without, 10);
+        if (!isNaN(num) && String(num) === without) {
           groups.push({ name: layer.name, num: num, ref: layer });
         } else {
-          var nested = findNumberedGroups(layer, prefix, depth + 1);
-          for (var j = 0; j < nested.length; j++) groups.push(nested[j]);
+          var sub = findNumberedGroups(layer, pfx, depth + 1);
+          for (var j = 0; j < sub.length; j++) groups.push(sub[j]);
         }
       }
     }
     return groups;
   }
-
   function getTextLayerNames(group) {
     var names = [];
     for (var i = 0; i < group.layers.length; i++) {
       var l = group.layers[i];
-      if (l.kind === LayerKind.TEXT) names.push(l.name);
+      if (l.kind === LayerKind.TEXT) { if (names.indexOf(l.name) === -1) names.push(l.name); }
       else if (l.typename === "LayerSet") {
         var sub = getTextLayerNames(l);
-        for (var j = 0; j < sub.length; j++) names.push(sub[j]);
+        for (var j = 0; j < sub.length; j++) { if (names.indexOf(sub[j]) === -1) names.push(sub[j]); }
       }
     }
     return names;
   }
-
   var doc = app.activeDocument;
-  var prefix = '${escapedPrefix}';
-  var groups = findNumberedGroups(doc, prefix, 0);
+  var groups = findNumberedGroups(doc, '${escapedPrefix}', 0);
   groups.sort(function(a, b) { return a.num - b.num; });
-
   var result = { groups: [], layerNames: [] };
   if (groups.length > 0) {
     result.groups = groups.map(function(g) { return g.name; });
     result.layerNames = getTextLayerNames(groups[0].ref);
   }
-  app.echoToOE(JSON.stringify(result));
+  app.echoToOE(token + '|' + JSON.stringify(result));
 })();
 `;
 }
 
 /**
- * Updates all text layers in the numbered groups based on LayerConfig.
- * No save is triggered — user controls when to save in Photopea.
+ * Builds a script for a SINGLE team update.
+ * One team per script call = small scripts, no timeout risk.
  */
-function buildUpdateScript(teams: TeamStanding[], config: LayerConfig): string {
+function buildSingleUpdateScript(team: TeamStanding, config: LayerConfig): string {
   interface Update { groupName: string; layerName: string; value: string; }
   const updates: Update[] = [];
 
-  for (const team of teams) {
-    const groupName = config.groupPrefix
-      ? `${config.groupPrefix}${team.position}`
-      : String(team.position);
+  const groupName = config.groupPrefix
+    ? `${config.groupPrefix}${team.position}`
+    : String(team.position);
 
-    for (const [field, layerName] of Object.entries(config.fieldMap)) {
-      if (!layerName) continue;
-      const value = getFieldValue(team, field as keyof typeof config.fieldMap);
-      if (value === "") continue;
-      updates.push({ groupName, layerName, value });
-    }
+  for (const [field, layerName] of Object.entries(config.fieldMap)) {
+    if (!layerName) continue;
+    const value = getFieldValue(team, field as keyof typeof config.fieldMap);
+    if (value === "") continue;
+    updates.push({ groupName, layerName, value });
   }
 
   if (updates.length === 0) return "";
 
-  const updatesJSON = JSON.stringify(updates)
-    .replace(/\\/g, "\\\\")
-    .replace(/`/g, "\\`");
+  // Safely encode as JSON inline — no template literal escape issues
+  const updatesStr = JSON.stringify(updates);
 
   return `
 (function() {
+  var token = __TOKEN__;
+  var updates = ${updatesStr};
   var doc = app.activeDocument;
-  var updates = ${updatesJSON};
 
   function findGroup(container, name, depth) {
-    if (depth > 6) return null;
+    if (depth > 8) return null;
     for (var i = 0; i < container.layers.length; i++) {
       var layer = container.layers[i];
       if (layer.typename === "LayerSet") {
@@ -140,7 +136,7 @@ function buildUpdateScript(teams: TeamStanding[], config: LayerConfig): string {
   }
 
   function updateTextLayer(container, layerName, value, depth) {
-    if (depth > 4) return false;
+    if (depth > 6) return false;
     for (var i = 0; i < container.layers.length; i++) {
       var layer = container.layers[i];
       if (layer.name === layerName && layer.kind === LayerKind.TEXT) {
@@ -154,21 +150,20 @@ function buildUpdateScript(teams: TeamStanding[], config: LayerConfig): string {
     return false;
   }
 
-  for (var i = 0; i < updates.length; i++) {
-    var u = updates[i];
-    var group = findGroup(doc, u.groupName, 0);
-    if (group) {
-      updateTextLayer(group, u.layerName, u.value, 0);
+  var group = findGroup(doc, updates[0].groupName, 0);
+  if (group) {
+    for (var i = 0; i < updates.length; i++) {
+      updateTextLayer(group, updates[i].layerName, updates[i].value, 0);
     }
   }
 
-  app.echoToOE("ok");
+  app.echoToOE(token + '|ok');
 })();
 `;
 }
 
 const MOCK_SCAN: PsdScanResult = {
-  groups: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"],
+  groups: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20"],
   layerNames: ["posicao", "nome", "pontos", "jogos", "vitorias", "empates", "derrotas", "saldo"],
 };
 
@@ -180,8 +175,7 @@ export function usePhotopea() {
       await new Promise(res => setTimeout(res, 400));
       return MOCK_SCAN;
     }
-    const script = buildScanScript(prefix);
-    const result = await runScript(script);
+    const result = await runScript(buildScanScript(prefix));
     try {
       return JSON.parse(result) as PsdScanResult;
     } catch {
@@ -189,20 +183,28 @@ export function usePhotopea() {
     }
   }, [isPhotopea]);
 
-  const applyUpdates = useCallback(async (queue: TeamStanding[], config: LayerConfig) => {
+  const applyUpdates = useCallback(async (
+    queue: TeamStanding[],
+    config: LayerConfig,
+    onProgress?: (done: number, total: number) => void,
+  ) => {
     if (!isPhotopea) {
-      await new Promise(res => setTimeout(res, 600));
+      for (let i = 0; i < queue.length; i++) {
+        await new Promise(res => setTimeout(res, 80));
+        onProgress?.(i + 1, queue.length);
+      }
       return;
     }
 
-    const CHUNK = 5;
-    for (let i = 0; i < queue.length; i += CHUNK) {
-      const chunk = queue.slice(i, i + CHUNK);
-      const script = buildUpdateScript(chunk, config);
+    for (let i = 0; i < queue.length; i++) {
+      const team = queue[i];
+      const script = buildSingleUpdateScript(team, config);
       if (script) {
         await runScript(script);
-        await new Promise(res => setTimeout(res, 60));
+        // Small breathing room between teams so Photopea doesn't queue-drop
+        await new Promise(res => setTimeout(res, 120));
       }
+      onProgress?.(i + 1, queue.length);
     }
   }, [isPhotopea]);
 

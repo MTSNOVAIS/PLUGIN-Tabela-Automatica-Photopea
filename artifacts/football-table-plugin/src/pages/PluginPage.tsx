@@ -99,6 +99,8 @@ export default function PluginPage() {
     }
   }, [scanPsd, toast]);
 
+  const [updateProgress, setUpdateProgress] = useState<{ done: number; total: number } | null>(null);
+
   const handleApplyUpdates = useCallback(async () => {
     if (!updateQueue.length) {
       toast({ title: "Fila vazia", description: "Adicione posições à fila primeiro", variant: "destructive" });
@@ -110,15 +112,20 @@ export default function PluginPage() {
       return;
     }
     setIsUpdating(true);
+    setUpdateProgress({ done: 0, total: updateQueue.length });
+    const snapshot = [...updateQueue];
     try {
-      await applyUpdates(updateQueue, layerConfig);
-      setUpdatedCount(prev => prev + updateQueue.length);
-      toast({ title: "Atualização concluída!", description: `${updateQueue.length} posições atualizadas no Photopea` });
+      await applyUpdates(snapshot, layerConfig, (done, total) => {
+        setUpdateProgress({ done, total });
+      });
+      setUpdatedCount(prev => prev + snapshot.length);
+      toast({ title: "Atualização concluída!", description: `${snapshot.length} posições atualizadas no Photopea` });
       setUpdateQueue([]);
     } catch (err) {
       toast({ title: "Erro na atualização", description: String(err), variant: "destructive" });
     } finally {
       setIsUpdating(false);
+      setUpdateProgress(null);
     }
   }, [updateQueue, layerConfig, applyUpdates, isPhotopea, toast]);
 
@@ -153,7 +160,23 @@ export default function PluginPage() {
         <LeagueSelector onLeagueChange={handleLeagueChange} isLoading={isLoading} />
       </div>
 
-      {standings.length > 0 && updatedCount > 0 && (
+      {updateProgress && (
+        <div className="px-3 py-1.5 border-b border-border bg-blue-50">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-blue-700 font-medium">
+              Atualizando {updateProgress.done}/{updateProgress.total}...
+            </span>
+            <Progress
+              value={(updateProgress.done / updateProgress.total) * 100}
+              className="flex-1 h-1.5"
+            />
+            <span className="text-xs text-blue-700">
+              {Math.round((updateProgress.done / updateProgress.total) * 100)}%
+            </span>
+          </div>
+        </div>
+      )}
+      {!updateProgress && standings.length > 0 && updatedCount > 0 && (
         <div className="px-3 py-1 border-b border-border">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Progresso</span>
