@@ -53,19 +53,16 @@ export default function PluginPage() {
 
   const handleAddBatch = useCallback((startPos?: number) => {
     if (!standings.length) return;
-    setUpdateQueue(prev => {
-      // If no startPos given, find the next position not yet in the queue
-      const queuedPositions = new Set(prev.map(t => t.position));
-      const effectiveStart = startPos
-        ?? (standings.find(t => !queuedPositions.has(t.position))?.position ?? 1);
 
+    // Compute batch outside setState so we can toast with the result
+    setUpdateQueue(prev => {
+      const queued = new Set(prev.map(t => t.position));
+      const from = startPos ?? (standings.find(t => !queued.has(t.position))?.position ?? 1);
       const batch = standings
-        .filter(t => t.position >= effectiveStart && !queuedPositions.has(t.position))
+        .filter(t => t.position >= from && !queued.has(t.position))
         .slice(0, batchSize);
 
       if (batch.length === 0) return prev;
-
-      const newQueue = [...prev, ...batch].sort((a, b) => a.position - b.position);
 
       const first = batch[0].position;
       const last = batch[batch.length - 1].position;
@@ -74,7 +71,7 @@ export default function PluginPage() {
         description: `Pos. ${first}${last !== first ? ` a ${last}` : ""}`,
       });
 
-      return newQueue;
+      return [...prev, ...batch].sort((a, b) => a.position - b.position);
     });
   }, [standings, batchSize, toast]);
 

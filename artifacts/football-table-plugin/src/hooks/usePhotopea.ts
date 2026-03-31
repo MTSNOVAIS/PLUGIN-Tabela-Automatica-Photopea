@@ -11,42 +11,38 @@ function isInPhotopea(): boolean {
 }
 
 /**
- * Runs a Photopea script and waits for a response tagged with a unique token.
- * The script must call: app.echoToOE(__TOKEN__ + "|" + yourData)
- * This prevents capturing stray Photopea messages (progress, HMR, etc.)
+ * Sends a script to Photopea and waits for the response.
+ * Scripts must call app.echoToOE("...") to send data back.
+ * We process ONE script at a time (sequential), so there is never
+ * more than one listener active — no race conditions possible.
  */
-function runScript(scriptBody: string): Promise<string> {
+function runScript(script: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const prefix = token + "|";
-
-    // Inject token into the script — script must echo: token + "|" + data
-    const fullScript = scriptBody.replace("__TOKEN__", `'${token}'`);
-
     const timeout = setTimeout(() => {
       window.removeEventListener("message", handler);
-      reject(new Error("Photopea timeout"));
+      reject(new Error("Photopea timeout (15s)"));
     }, 15000);
 
     function handler(event: MessageEvent) {
+      // Only accept messages from Photopea (our parent frame)
       if (event.source !== window.parent) return;
-      if (typeof event.data !== "string") return;
-      if (!event.data.startsWith(prefix)) return; // ignore unrelated messages
+      // Ignore binary messages (e.g. exported files)
+      if (event.data instanceof ArrayBuffer) return;
+
       clearTimeout(timeout);
       window.removeEventListener("message", handler);
-      resolve(event.data.slice(prefix.length));
+      resolve(typeof event.data === "string" ? event.data : String(event.data ?? ""));
     }
 
     window.addEventListener("message", handler);
-    window.parent.postMessage(fullScript, "*");
+    window.parent.postMessage(script, "*");
   });
 }
 
-function buildScanScript(prefix: string): string {
-  const escapedPrefix = prefix.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+function buildScanScript(groupPrefix: string): string {
+  const esc = groupPrefix.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   return `
 (function() {
-  var token = __TOKEN__;
   function findNumberedGroups(container, pfx, depth) {
     var groups = [];
     if (depth > 6) return groups;
@@ -67,60 +63,73 @@ function buildScanScript(prefix: string): string {
     }
     return groups;
   }
-  function getTextLayerNames(group) {
+
+  function collectTextNames(group) {
     var names = [];
     for (var i = 0; i < group.layers.length; i++) {
       var l = group.layers[i];
-      if (l.kind === LayerKind.TEXT) { if (names.indexOf(l.name) === -1) names.push(l.name); }
-      else if (l.typename === "LayerSet") {
-        var sub = getTextLayerNames(l);
-        for (var j = 0; j < sub.length; j++) { if (names.indexOf(sub[j]) === -1) names.push(sub[j]); }
+      if (l.kind === LayerKind.TEXT) {
+        if (names.indexOf(l.name) === -1) names.push(l.name);
+      } else if (l.typename === "LayerSet") {
+        var sub = collectTextNames(l);
+        for (var j = 0; j < sub.length; j++) {
+          if (names.indexOf(sub[j]) === -1) names.push(sub[j]);
+        }
       }
     }
     return names;
   }
+
   var doc = app.activeDocument;
-  var groups = findNumberedGroups(doc, '${escapedPrefix}', 0);
+  var groups = findNumberedGroups(doc, '${esc}', 0);
   groups.sort(function(a, b) { return a.num - b.num; });
+
   var result = { groups: [], layerNames: [] };
   if (groups.length > 0) {
     result.groups = groups.map(function(g) { return g.name; });
-    result.layerNames = getTextLayerNames(groups[0].ref);
+    result.layerNames = collectTextNames(groups[0].ref);
   }
-  app.echoToOE(token + '|' + JSON.stringify(result));
+  app.echoToOE(JSON.stringify(result));
 })();
 `;
 }
 
 /**
- * Builds a script for a SINGLE team update.
- * One team per script call = small scripts, no timeout risk.
+ * One script per team — small, fast, and guaranteed to finish
+ * before the next one starts. Finds the team's numbered group
+ * and updates each mapped text layer inside it.
  */
-function buildSingleUpdateScript(team: TeamStanding, config: LayerConfig): string {
-  interface Update { groupName: string; layerName: string; value: string; }
-  const updates: Update[] = [];
-
+function buildUpdateScript(team: TeamStanding, config: LayerConfig): string {
   const groupName = config.groupPrefix
     ? `${config.groupPrefix}${team.position}`
     : String(team.position);
+
+  const updates: Array<{ ln: string; val: string }> = [];
 
   for (const [field, layerName] of Object.entries(config.fieldMap)) {
     if (!layerName) continue;
     const value = getFieldValue(team, field as keyof typeof config.fieldMap);
     if (value === "") continue;
-    updates.push({ groupName, layerName, value });
+    updates.push({ ln: layerName, val: value });
   }
 
   if (updates.length === 0) return "";
 
-  // Safely encode as JSON inline — no template literal escape issues
-  const updatesStr = JSON.stringify(updates);
+  // Escape values for safe embedding inside single-quoted JS strings
+  function esc(s: string) {
+    return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  }
+
+  const groupEsc = esc(groupName);
+  const updatesLiteral = updates
+    .map(u => `{ln:'${esc(u.ln)}',val:'${esc(u.val)}'}`)
+    .join(",");
 
   return `
 (function() {
-  var token = __TOKEN__;
-  var updates = ${updatesStr};
   var doc = app.activeDocument;
+  var groupName = '${groupEsc}';
+  var updates = [${updatesLiteral}];
 
   function findGroup(container, name, depth) {
     if (depth > 8) return null;
@@ -135,7 +144,7 @@ function buildSingleUpdateScript(team: TeamStanding, config: LayerConfig): strin
     return null;
   }
 
-  function updateTextLayer(container, layerName, value, depth) {
+  function setTextLayer(container, layerName, value, depth) {
     if (depth > 6) return false;
     for (var i = 0; i < container.layers.length; i++) {
       var layer = container.layers[i];
@@ -144,20 +153,19 @@ function buildSingleUpdateScript(team: TeamStanding, config: LayerConfig): strin
         return true;
       }
       if (layer.typename === "LayerSet") {
-        if (updateTextLayer(layer, layerName, value, depth + 1)) return true;
+        if (setTextLayer(layer, layerName, value, depth + 1)) return true;
       }
     }
     return false;
   }
 
-  var group = findGroup(doc, updates[0].groupName, 0);
+  var group = findGroup(doc, groupName, 0);
   if (group) {
     for (var i = 0; i < updates.length; i++) {
-      updateTextLayer(group, updates[i].layerName, updates[i].value, 0);
+      setTextLayer(group, updates[i].ln, updates[i].val, 0);
     }
   }
-
-  app.echoToOE(token + '|ok');
+  app.echoToOE("ok");
 })();
 `;
 }
@@ -175,9 +183,9 @@ export function usePhotopea() {
       await new Promise(res => setTimeout(res, 400));
       return MOCK_SCAN;
     }
-    const result = await runScript(buildScanScript(prefix));
+    const raw = await runScript(buildScanScript(prefix));
     try {
-      return JSON.parse(result) as PsdScanResult;
+      return JSON.parse(raw) as PsdScanResult;
     } catch {
       return { groups: [], layerNames: [] };
     }
@@ -197,12 +205,11 @@ export function usePhotopea() {
     }
 
     for (let i = 0; i < queue.length; i++) {
-      const team = queue[i];
-      const script = buildSingleUpdateScript(team, config);
+      const script = buildUpdateScript(queue[i], config);
       if (script) {
         await runScript(script);
-        // Small breathing room between teams so Photopea doesn't queue-drop
-        await new Promise(res => setTimeout(res, 120));
+        // Give Photopea a moment to settle before the next script
+        await new Promise(res => setTimeout(res, 150));
       }
       onProgress?.(i + 1, queue.length);
     }
