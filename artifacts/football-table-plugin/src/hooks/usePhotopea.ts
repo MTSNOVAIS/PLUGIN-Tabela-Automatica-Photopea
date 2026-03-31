@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { TeamStanding, LayerConfig, PsdScanResult } from "@/types/football";
+import type { TeamStanding, LayerConfig } from "@/types/football";
 import { getFieldValue } from "@/types/football";
 
 function isInPhotopea(): boolean {
@@ -33,70 +33,6 @@ function runScript(script: string): Promise<string> {
     window.addEventListener("message", handler);
     window.parent.postMessage(script, "*");
   });
-}
-
-/**
- * Scans the active document for numbered groups.
- * Handles both "1","2"... AND "01","02"... naming (and with a prefix).
- * Returns the actual PSD group name for each position so updates
- * always use the exact name — never a recomputed one.
- */
-function buildScanScript(groupPrefix: string): string {
-  const esc = groupPrefix.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-  return `
-(function() {
-  function findNumberedGroups(container, pfx, depth) {
-    var found = [];
-    if (depth > 6) return found;
-    for (var i = 0; i < container.layers.length; i++) {
-      var layer = container.layers[i];
-      if (layer.typename !== "LayerSet") continue;
-      var trimmed = layer.name.trim();
-      var stripped = trimmed;
-      if (pfx && trimmed.indexOf(pfx) === 0) stripped = trimmed.slice(pfx.length).trim();
-      var num = parseInt(stripped, 10);
-      // Accept "1" or "01" — isNaN guard + must be a positive integer
-      if (!isNaN(num) && num > 0 && /^0*[1-9][0-9]*$/.test(stripped)) {
-        found.push({ name: layer.name, num: num, ref: layer });
-      } else {
-        var sub = findNumberedGroups(layer, pfx, depth + 1);
-        for (var j = 0; j < sub.length; j++) found.push(sub[j]);
-      }
-    }
-    return found;
-  }
-
-  function collectTextNames(group) {
-    var names = [];
-    for (var i = 0; i < group.layers.length; i++) {
-      var l = group.layers[i];
-      if (l.kind === LayerKind.TEXT) {
-        if (names.indexOf(l.name) === -1) names.push(l.name);
-      } else if (l.typename === "LayerSet") {
-        var sub = collectTextNames(l);
-        for (var k = 0; k < sub.length; k++) {
-          if (names.indexOf(sub[k]) === -1) names.push(sub[k]);
-        }
-      }
-    }
-    return names;
-  }
-
-  var doc = app.activeDocument;
-  var groups = findNumberedGroups(doc, '${esc}', 0);
-  groups.sort(function(a, b) { return a.num - b.num; });
-
-  var result = { groups: [], layerNames: [], groupMap: {} };
-  if (groups.length > 0) {
-    for (var i = 0; i < groups.length; i++) {
-      result.groups.push(groups[i].name);
-      result.groupMap[groups[i].num] = groups[i].name;
-    }
-    result.layerNames = collectTextNames(groups[0].ref);
-  }
-  app.echoToOE(JSON.stringify(result));
-})();
-`;
 }
 
 /**
@@ -179,30 +115,8 @@ function buildUpdateScript(
 `;
 }
 
-const MOCK_SCAN: PsdScanResult = {
-  groups: ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20"],
-  layerNames: ["posicao","nome","pontos","jogos","vitorias","empates","derrotas","saldo"],
-  groupMap: Object.fromEntries(
-    Array.from({ length: 20 }, (_, i) => [i + 1, String(i + 1)])
-  ),
-};
-
 export function usePhotopea() {
   const isPhotopea = isInPhotopea();
-
-  const scanPsd = useCallback(async (prefix: string): Promise<PsdScanResult> => {
-    if (!isPhotopea) {
-      await new Promise(res => setTimeout(res, 400));
-      return MOCK_SCAN;
-    }
-    const raw = await runScript(buildScanScript(prefix));
-    try {
-      const parsed = JSON.parse(raw) as PsdScanResult;
-      return parsed;
-    } catch {
-      return { groups: [], layerNames: [], groupMap: {} };
-    }
-  }, [isPhotopea]);
 
   const applyUpdates = useCallback(async (
     queue: TeamStanding[],
@@ -228,5 +142,5 @@ export function usePhotopea() {
     }
   }, [isPhotopea]);
 
-  return { scanPsd, applyUpdates, isPhotopea };
+  return { applyUpdates, isPhotopea };
 }

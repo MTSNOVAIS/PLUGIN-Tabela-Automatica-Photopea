@@ -10,7 +10,7 @@ import { UpdateQueue } from "@/components/UpdateQueue";
 import { LayerMapper } from "@/components/LayerMapper";
 import { useSofascore } from "@/hooks/useSofascore";
 import { usePhotopea } from "@/hooks/usePhotopea";
-import type { TeamStanding, LayerConfig, PsdScanResult } from "@/types/football";
+import type { TeamStanding, LayerConfig } from "@/types/football";
 
 const PLUGIN_LOGO = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRnzhDYO9zajTF_4o-5bqTLMWCjKVHiRcdJA&s";
 
@@ -25,15 +25,13 @@ export default function PluginPage() {
   const [selectedSeason, setSelectedSeason] = useState<string>("");
   const [batchSize, setBatchSize] = useState<number>(3);
   const [layerConfig, setLayerConfig] = useState<LayerConfig>(DEFAULT_CONFIG);
-  const [scanResult, setScanResult] = useState<PsdScanResult | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
   const [updateQueue, setUpdateQueue] = useState<TeamStanding[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updatedCount, setUpdatedCount] = useState(0);
   const [activeTab, setActiveTab] = useState<"standings" | "mapper" | "queue">("standings");
 
   const { standings, isLoading, error, fetchStandings } = useSofascore();
-  const { scanPsd, applyUpdates, isPhotopea } = usePhotopea();
+  const { applyUpdates, isPhotopea } = usePhotopea();
 
   const handleLeagueChange = useCallback(async (leagueId: string, seasonId: string) => {
     setSelectedLeague(leagueId);
@@ -89,30 +87,6 @@ export default function PluginPage() {
     setUpdatedCount(0);
   }, []);
 
-  const handleScan = useCallback(async (prefix: string) => {
-    setIsScanning(true);
-    try {
-      const result = await scanPsd(prefix);
-      setScanResult(result);
-      if (result.groups.length > 0) {
-        toast({
-          title: "PSD escaneado",
-          description: `${result.groups.length} grupos e ${result.layerNames.length} layers de texto encontrados`,
-        });
-      } else {
-        toast({
-          title: "Nenhum grupo numerado encontrado",
-          description: "Verifique o prefixo ou abra um PSD primeiro",
-          variant: "destructive",
-        });
-      }
-    } catch {
-      toast({ title: "Erro ao escanear", description: "Abra um PSD no Photopea primeiro", variant: "destructive" });
-    } finally {
-      setIsScanning(false);
-    }
-  }, [scanPsd, toast]);
-
   const [updateProgress, setUpdateProgress] = useState<{ done: number; total: number } | null>(null);
 
   const handleApplyUpdates = useCallback(async () => {
@@ -129,7 +103,7 @@ export default function PluginPage() {
     setUpdateProgress({ done: 0, total: updateQueue.length });
     const snapshot = [...updateQueue];
     try {
-      await applyUpdates(snapshot, layerConfig, scanResult?.groupMap ?? {}, (done, total) => {
+      await applyUpdates(snapshot, layerConfig, {}, (done, total) => {
         setUpdateProgress({ done, total });
       });
       setUpdatedCount(prev => prev + snapshot.length);
@@ -141,7 +115,7 @@ export default function PluginPage() {
       setIsUpdating(false);
       setUpdateProgress(null);
     }
-  }, [updateQueue, layerConfig, scanResult, applyUpdates, isPhotopea, toast]);
+  }, [updateQueue, layerConfig, applyUpdates, isPhotopea, toast]);
 
   void selectedLeague;
   void selectedSeason;
@@ -264,10 +238,7 @@ export default function PluginPage() {
         {activeTab === "mapper" && (
           <LayerMapper
             config={layerConfig}
-            scanResult={scanResult}
-            isScanning={isScanning}
             isPhotopea={isPhotopea}
-            onScan={handleScan}
             onConfigChange={setLayerConfig}
           />
         )}
